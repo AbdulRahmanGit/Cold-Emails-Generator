@@ -3,6 +3,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import os
+import streamlit as st
 
 def generate_subject(job):
     """Generate a professional subject line based on the job description."""
@@ -12,11 +13,11 @@ def generate_subject(job):
 
 def send_email(to_email, subject, body, resume_path, original_resume_name=None):
     """Send an email with an attached resume."""
-    from_email = os.getenv("EMAIL_ADDRESS")
-    email_password = os.getenv("EMAIL_PASSWORD")
+    from_email = st.secrets["EMAIL_ADDRESS"]
+    email_password = st.secrets["EMAIL_PASSWORD"]
 
     if not from_email or not email_password:
-        raise ValueError("Email credentials are not set in environment variables.")
+        raise ValueError("Email credentials are not set in Streamlit secrets.")
 
     msg = MIMEMultipart()
     msg['From'] = from_email

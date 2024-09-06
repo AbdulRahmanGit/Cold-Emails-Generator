@@ -4,18 +4,16 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.exceptions import OutputParserException
-from dotenv import load_dotenv
+import streamlit as st
 from resume import Resume
 from utils import print_wrapped  # Import the new print_wrapped function
 
-load_dotenv()
-
 # Set USER_AGENT
-os.environ['USER_AGENT'] = os.getenv('USER_AGENT', 'ColdEmailGenerator/1.0')
+os.environ['USER_AGENT'] = st.secrets.get('USER_AGENT', 'ColdEmailGenerator/1.0')
 
 class Chain:
     def __init__(self):
-        self.llm = ChatGroq(temperature=0.4, groq_api_key=os.getenv("GROQ_API_KEY"), model_name="llama-3.1-70b-versatile")
+        self.llm = ChatGroq(temperature=0.4, groq_api_key=st.secrets["GROQ_API_KEY"], model_name="llama-3.1-70b-versatile")
 
     def extract_jobs(self, cleaned_text):
         prompt_extract = PromptTemplate.from_template(
@@ -72,4 +70,4 @@ class Chain:
         return res.content
 
 if __name__ == "__main__":
-    print(os.getenv("GROQ_API_KEY"))
+    print(st.secrets["GROQ_API_KEY"])

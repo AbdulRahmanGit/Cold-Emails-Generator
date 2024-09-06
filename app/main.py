@@ -8,32 +8,6 @@ import tempfile
 import os
 import time
 
-# Generator function for streaming email generation
-def stream_email_content(job, resume_data, llm):
-    """
-    Stream the email content generation process.
-
-    Args:
-        job (dict): Job details.
-        resume_data (dict): Parsed resume data.
-        llm (object): Language model for generating email content.
-
-    Yields:
-        str: Parts of the email content.
-    """
-    try:
-        # Generate and stream the subject
-        subject = generate_subject(job)
-        yield f"Subject: {subject}\n\n"
-
-        # Generate and stream the body content
-        email_body = llm.write_mail(job, resume_data)
-        for line in email_body:
-            yield line + '\n'
-            time.sleep(0.1)  # Simulate streaming delay
-    except Exception as e:
-        yield f"An error occurred during email generation: {e}\n"
-
 def create_streamlit_app(llm, clean_text):
     st.title("📧 Cold Mail Generator")
 
@@ -76,14 +50,19 @@ def create_streamlit_app(llm, clean_text):
                 st.session_state.subject = ""
                 st.session_state.email_body = ""
 
-                for job in jobs:
-                    resume_data = resume.split_resume_sections(resume.data)
-                    email_body = llm.write_mail(job, resume_data)
-                    #print("Email Body:", email_body)  # Debug statement
-                    st.session_state.email_body = email_body
+                unique_jobs = set()  # Use a set to track unique jobs
 
-                    subject = generate_subject(job)
-                    st.session_state.subject = subject
+                for job in jobs:
+                    job_key = (job['company_name'], job['role'], job['description'])  # Define a unique key for each job
+                    if job_key not in unique_jobs:
+                        unique_jobs.add(job_key)
+                        resume_data = resume.split_resume_sections(resume.data)
+                        email_body = llm.write_mail(job, resume_data)
+                        print("Email Body:", email_body)  # Debug statement
+                        st.session_state.email_body = email_body
+
+                        subject = generate_subject(job)
+                        st.session_state.subject = subject
 
                 if st.session_state.subject and st.session_state.email_body:
                     st.success("Email generated successfully!")
