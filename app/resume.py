@@ -1,6 +1,6 @@
 import chromadb
 import uuid
-import fitz
+import PyPDF2
 import re
 import json
 import streamlit as st
@@ -17,9 +17,11 @@ class Resume:
     def extract_text_from_pdf(self, file_path):
         """Extract text from the resume PDF file."""
         text = ""
-        with fitz.open(file_path) as doc:
-            for page in doc:
-                text += page.get_text()
+        with open(file_path, 'rb') as file:
+            reader = PyPDF2.PdfReader(file)
+            for page_num in range(len(reader.pages)):
+                page = reader.pages[page_num]
+                text += page.extract_text()
         return text
 
     def load_Resume(self):
@@ -51,7 +53,7 @@ class Resume:
                 sections["Experience"] += section + "\n"
             elif "education" in section_lower:
                 sections["Education"] += section + "\n"
-            elif "http" in section_lower:
+            elif "https" in section_lower:
                 sections["Links"].append(section.strip())
 
         return sections
