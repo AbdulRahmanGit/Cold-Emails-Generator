@@ -163,3 +163,4 @@ cython_debug/
 app/.env
 app/.env
 "app/resource/cred.json" 
+"app/resource/cred.json" 
