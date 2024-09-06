@@ -1,4 +1,12 @@
+import textwrap
 import re
+
+def print_wrapped(text, width=100):
+    """Print text with line wrapping."""
+    wrapped_text = ""
+    for line in text.split('\n'):
+        wrapped_text += '\n'.join(textwrap.wrap(line, width=width)) + '\n'
+    return wrapped_text
 
 def clean_text(text):
     # Remove HTML tags

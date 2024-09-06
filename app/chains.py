@@ -1,15 +1,21 @@
 import os
+import json
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.exceptions import OutputParserException
 from dotenv import load_dotenv
+from resume import Resume
+from utils import print_wrapped  # Import the new print_wrapped function
 
 load_dotenv()
 
+# Set USER_AGENT
+os.environ['USER_AGENT'] = os.getenv('USER_AGENT', 'ColdEmailGenerator/1.0')
+
 class Chain:
     def __init__(self):
-        self.llm = ChatGroq(temperature=0, groq_api_key=os.getenv("GROQ_API_KEY"), model_name="llama-3.1-70b-versatile")
+        self.llm = ChatGroq(temperature=0.4, groq_api_key=os.getenv("GROQ_API_KEY"), model_name="llama-3.1-70b-versatile")
 
     def extract_jobs(self, cleaned_text):
         prompt_extract = PromptTemplate.from_template(
@@ -18,7 +24,9 @@ class Chain:
             {page_data}
             ### INSTRUCTION:
             The scraped text is from the career's page of a website.
-            Your job is to extract the job postings and return them in JSON format containing the following keys: `role`, `experience`, `skills` and `description`.
+            Your job is to extract the job postings and return them in JSON format containing the following keys: `company_name`, `role`, `experience`, `skills` and `description`.
+            If any information is not available, use "Not specified" instead of "null".
+            Ensure to extract as much relevant information as possible for each field.
             Only return the valid JSON.
             ### VALID JSON (NO PREAMBLE):
             """
@@ -28,32 +36,39 @@ class Chain:
         try:
             json_parser = JsonOutputParser()
             res = json_parser.parse(res.content)
+            print_wrapped(json.dumps(res, indent=2))  # Use print_wrapped for better output
         except OutputParserException:
             raise OutputParserException("Context too big. Unable to parse jobs.")
         return res if isinstance(res, list) else [res]
 
-    def write_mail(self, job, links):
+    def write_mail(self, job, resume_data):
         prompt_email = PromptTemplate.from_template(
             """
-            ### JOB DESCRIPTION:
-            {job_description}
+        ### JOB DESCRIPTION:
+        {job_description}
 
-            ### INSTRUCTION:
-            You are Mohan, a business development executive at AtliQ. AtliQ is an AI & Software Consulting company dedicated to facilitating
-            the seamless integration of business processes through automated tools. 
-            Over our experience, we have empowered numerous enterprises with tailored solutions, fostering scalability, 
-            process optimization, cost reduction, and heightened overall efficiency. 
-            Your job is to write a cold email to the client regarding the job mentioned above describing the capability of AtliQ 
-            in fulfilling their needs.
-            Also add the most relevant ones from the following links to showcase Atliq's portfolio: {link_list}
-            Remember you are Mohan, BDE at AtliQ. 
-            Do not provide a preamble.
-            ### EMAIL (NO PREAMBLE):
+        ### RESUME:
+        {resume_data}
 
-            """
+        ### INSTRUCTION:
+        You are a job seeker looking to apply for the job mentioned above. 
+        Write a professional cold email to the hiring manager that includes the following:
+        1. A brief introduction of yourself.
+        2. A summary of your relevant skills and experiences that match the job description.
+        3. Specific projects or achievements from your resume that demonstrate your qualifications.
+        4. A closing statement expressing your enthusiasm for the role and your availability for an interview and attachment of resume for reference.
+        5. A kind and polite way of informing the hiring manager that you will follow up if you do not hear back within a certain timeframe.
+        Ensure the email is concise, well-structured, and free of any preamble or subject line.
+        
+        ### EMAIL (NO PREAMBLE):
+        """
         )
         chain_email = prompt_email | self.llm
-        res = chain_email.invoke({"job_description": str(job), "link_list": links})
+        res = chain_email.invoke({"job_description": str(job), "resume_data": resume_data})
+        
+        # Post-process the content to ensure proper formatting
+        #formatted_content = print_wrapped(res.content)
+        print("Formatted Email Content:", res.content)  # Debug statement
         return res.content
 
 if __name__ == "__main__":
