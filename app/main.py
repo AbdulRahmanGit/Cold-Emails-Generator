@@ -14,6 +14,9 @@ def create_streamlit_app(llm, clean_text):
     url_input = st.text_input("Enter a URL:", value="")
     recipient_email = st.text_input("Enter recipient's Email:", type="default")
     resume_file = st.file_uploader("Upload your Resume:", type=["pdf"])
+    
+    # Add a slider for selecting the number of words
+    word_limit = st.slider("Select the number of words for the email response:", min_value=50, max_value=200, value=100, step=50)
 
     submit_button = st.button("Generate Email")
 
@@ -57,7 +60,7 @@ def create_streamlit_app(llm, clean_text):
                     if job_key not in unique_jobs:
                         unique_jobs.add(job_key)
                         resume_data = resume.split_resume_sections(resume.data)
-                        email_body = llm.write_mail(job, resume_data)
+                        email_body = llm.write_mail(job, resume_data, word_limit)  # Pass the word limit to the write_mail method
                         print("Email Body:", email_body)  # Debug statement
                         st.session_state.email_body = email_body
 

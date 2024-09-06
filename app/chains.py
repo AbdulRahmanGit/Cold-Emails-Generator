@@ -39,14 +39,14 @@ class Chain:
             raise OutputParserException("Context too big. Unable to parse jobs.")
         return res if isinstance(res, list) else [res]
 
-    def write_mail(self, job, resume_data):
+    def write_mail(self, job, resume_data, word_limit):
         prompt_email = PromptTemplate.from_template(
-            """
+            f"""
         ### JOB DESCRIPTION:
-        {job_description}
+        {{job_description}}
 
         ### RESUME:
-        {resume_data}
+        {{resume_data}}
 
         ### INSTRUCTION:
         You are a job seeker looking to apply for the job mentioned above. 
@@ -57,6 +57,7 @@ class Chain:
         4. A closing statement expressing your enthusiasm for the role and your availability for an interview and attachment of resume for reference.
         5. A kind and polite way of informing the hiring manager that you will follow up if you do not hear back within a certain timeframe.
         Ensure the email is concise, well-structured, and free of any preamble or subject line.
+        Limit the email to {word_limit} words.
         
         ### EMAIL (NO PREAMBLE):
         """
