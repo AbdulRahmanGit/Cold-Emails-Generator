@@ -1,6 +1,6 @@
 import os
 import json
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.exceptions import OutputParserException
@@ -9,11 +9,11 @@ from resume import Resume
 from utils import print_wrapped  # Import the new print_wrapped function
 
 # Set USER_AGENT
-os.environ['USER_AGENT'] = st.secrets.get('USER_AGENT', 'ColdEmailGenerator/1.0')
+os.environ['USER_AGENT'] = os.getenv('USER_AGENT', 'ColdEmailGenerator/1.0')
 
 class Chain:
     def __init__(self):
-        self.llm = ChatGroq(temperature=0.4, groq_api_key=st.secrets["GROQ_API_KEY"], model_name="llama-3.1-70b-versatile")
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.5, api_key=os.getenv("GEMINI_API_KEY"))
 
     def extract_jobs(self, cleaned_text):
         prompt_extract = PromptTemplate.from_template(
@@ -66,9 +66,7 @@ class Chain:
         res = chain_email.invoke({"job_description": str(job), "resume_data": resume_data})
         
         # Post-process the content to ensure proper formatting
-        #formatted_content = print_wrapped(res.content)
-        print("Formatted Email Content:", res.content)  # Debug statement
         return res.content
 
 if __name__ == "__main__":
-    print(st.secrets["GROQ_API_KEY"])
+    print(os.getenv("GEMINI_API_KEY"))
