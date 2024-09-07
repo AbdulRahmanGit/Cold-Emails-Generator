@@ -19,11 +19,9 @@ def authenticate_user(flow):
     return auth_url
 
 def handle_authorization(flow, code):
-    try:
-        flow.fetch_token(code=code)
-        st.session_state.credentials = flow.credentials
-    except Exception as e:
-        st.error(f"An error occurred during authorization: {e}")
+    flow.fetch_token(code=code)
+    credentials = flow.credentials
+    st.session_state.credentials = credentials
 
 def refresh_credentials(credentials):
     if credentials.expired and credentials.refresh_token:
