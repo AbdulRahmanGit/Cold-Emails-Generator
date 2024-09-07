@@ -1,33 +1,23 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
+   # Use the official Python image from the Docker Hub
+   FROM python:3.10-slim
 
-# Set the working directory in the container
-WORKDIR /app
+   # Set the working directory in the container
+   WORKDIR /app
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    wget \
-    build-essential \
-    libsqlite3-dev
+   # Copy the requirements.txt file into the container
+   COPY requirements.txt .
 
-# Install the required version of SQLite
-RUN wget https://www.sqlite.org/2023/sqlite-autoconf-3410000.tar.gz && \
-    tar xvfz sqlite-autoconf-3410000.tar.gz && \
-    cd sqlite-autoconf-3410000 && \
-    ./configure && \
-    make && \
-    make install && \
-    cd .. && \
-    rm -rf sqlite-autoconf-3410000*
+   # Install the dependencies
+   RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+   # Copy the rest of the application code into the container
+   COPY . .
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+   # Expose the port that Streamlit will run on
+   EXPOSE 8501
 
-# Make port 8501 available to the world outside this container
-EXPOSE 8501
+   # Set environment variables
+   ENV PYTHONUNBUFFERED=1
 
-# Run Streamlit
-CMD ["streamlit", "run", "app/main.py"]
+   # Run the Streamlit application
+   ENTRYPOINT ["streamlit", "run", "app/main.py"]

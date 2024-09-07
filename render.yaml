@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: cold-email-generator
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: GOOGLE_CLIENT_ID
+        fromSecret: GOOGLE_CLIENT_ID
+      - key: GOOGLE_CLIENT_SECRET
+        fromSecret: GOOGLE_CLIENT_SECRET
+      - key: GOOGLE_REDIRECT_URI
+        fromSecret: GOOGLE_REDIRECT_URI
+      - key: GOOGLE_PROJECT_ID
+        fromSecret: GOOGLE_PROJECT_ID
+      - key: CHROMADB_PERSISTENT_CLIENT_PATH
+        fromSecret: CHROMADB_PERSISTENT_CLIENT_PATH
+      - key: GEMINI_API_KEY
+        fromSecret: GEMINI_API_KEY
+      - key: USER_AGENT
+        fromSecret: USER_AGENT
