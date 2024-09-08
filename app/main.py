@@ -10,8 +10,11 @@ import time
 from authlib.integrations.requests_client import OAuth2Session
 import requests
 import json
-from oauth import load_client_secrets, get_flow, authenticate_user, handle_authorization
+from oauth import get_flow, authenticate_user, get_credentials, SCOPES, get_user_info
 from dotenv import load_dotenv
+from google.auth.transport.requests import Request
+import pickle
+from oauth import Flow, SCOPES
 
 # Load environment variables from .env file
 load_dotenv()
@@ -20,7 +23,7 @@ load_dotenv()
 client_secrets = {
     "web": {
         "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-        "project_id": os.getenv("GOOGLE_PROJECT_ID"),  # Load project ID from environment variable
+        "project_id": os.getenv("GOOGLE_PROJECT_ID"),
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
@@ -33,60 +36,138 @@ client_id = client_secrets["web"]["client_id"]
 client_secret = client_secrets["web"]["client_secret"]
 redirect_uri = client_secrets["web"]["redirect_uris"][0]
 
-def get_user_info(token):
-    user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
-    headers = {'Authorization': f'Bearer {token}'}
-    response = requests.get(user_info_url, headers=headers)
-    return response.json()
+SCOPES = ['https://www.googleapis.com/auth/userinfo.email', 'openid']
+OPTIONAL_SCOPES = ['https://www.googleapis.com/auth/gmail.send']
+if 'last_email_generation' not in st.session_state:
+    st.session_state.last_email_generation = 0
+if 'email_generation_count' not in st.session_state:
+    st.session_state.email_generation_count = 0
+
+EMAIL_GENERATION_COOLDOWN = 60  # 60 seconds cooldown
+MAX_GENERATIONS_PER_DAY = 5  # Maximum number of generations per day
+
+def get_flow(client_secrets, redirect_uri, include_optional=True):
+    scopes = SCOPES + (OPTIONAL_SCOPES if include_optional else [])
+    return Flow.from_client_config(client_secrets, scopes=scopes, redirect_uri=redirect_uri)
 
 def create_streamlit_app(llm, clean_text):
-    # OAuth login check
-    if 'token' not in st.session_state:
-        st.session_state.token = None
-    if 'user_email' not in st.session_state:
-        st.session_state.user_email = None
+    # Initialize session state variables
+    if 'is_authenticated' not in st.session_state:
+        st.session_state.is_authenticated = False
     if 'credentials' not in st.session_state:
         st.session_state.credentials = None
+    if 'user_email' not in st.session_state:
+        st.session_state.user_email = None
 
-    if not st.session_state.token:
-        st.title("Login with Google")
+    # Authentication flow
+    if not st.session_state.is_authenticated:
+        handle_authentication()
+    else:
+        main_app_logic(llm, clean_text)
+
+def handle_authentication():
+    if 'code' in st.query_params:
+        process_auth_code()
+    elif 'error' in st.query_params:
+        handle_auth_error()
+    else:
+        display_auth_link()
+
+def handle_auth_error():
+    error = st.query_params.get('error')
+    if error == 'access_denied':
+        st.error("You've chosen not to grant full permissions. Some features may be limited.")
+        st.session_state.is_authenticated = True
+        st.session_state.can_send_email = False
+    else:
+        st.error(f"An error occurred during authentication: {error}")
+    
+    if st.button("Continue with limited features"):
+        st.rerun()
+
+def process_auth_code():
+    code = st.query_params['code']
+    try:
         flow = get_flow(client_secrets, redirect_uri)
-        auth_url = authenticate_user(flow)
-        st.write(f"[Authorize with Google]({auth_url})")
-        code = st.text_input("Enter the authorization code:")
-        if code:
-            handle_authorization(flow, code)
-            if st.session_state.credentials:
-                st.session_state.token = st.session_state.credentials.token
-                user_info = get_user_info(st.session_state.token)
-                st.session_state.user_email = user_info.get('email')
-                st.success("Logged in successfully!")
-                st.experimental_rerun()  # Rerun the app to proceed after login
-            else:
-                st.stop()  # Stop the app if not authenticated
-
-    if st.session_state.token:
-        st.title("📧 Cold Mail Generator")
-
-        url_input = st.text_input("Enter a URL:", value="")
-        recipient_email = st.text_input("Enter recipient's Email:", type="default")
-        resume_file = st.file_uploader("Upload your Resume:", type=["pdf"])
+        flow.fetch_token(code=code)
+        st.session_state.credentials = flow.credentials
+        st.session_state.is_authenticated = True
+        user_info = get_user_info(st.session_state.credentials.token)
+        st.session_state.user_email = user_info.get('email')
         
-        # Add a slider for selecting the number of words
-        word_limit = st.slider("Select the number of words for the email response:", min_value=50, max_value=200, value=100, step=50)
+        if 'https://www.googleapis.com/auth/gmail.send' in flow.credentials.scopes:
+            st.session_state.can_send_email = True
+        else:
+            st.session_state.can_send_email = False
+            st.warning("Email sending capability is limited due to scope restrictions.")
+        
+        st.rerun()
+    except Exception as e:
+        st.error(f"Authentication failed: {str(e)}")
+        st.session_state.is_authenticated = False
 
-        submit_button = st.button("Generate Email")
+def display_auth_link():
+    st.title("📧 Cold Mail Generator")
+    flow = get_flow(client_secrets, redirect_uri)
+    auth_url, _ = flow.authorization_url(prompt='consent')
+    st.write(f"[Authenticate with Google]({auth_url})")
 
-        if 'temp_resume_path' not in st.session_state:
-            st.session_state.temp_resume_path = ""
-        if 'original_resume_name' not in st.session_state:
-            st.session_state.original_resume_name = ""
-        if 'subject' not in st.session_state:
-            st.session_state.subject = ""
-        if 'email_body' not in st.session_state:
-            st.session_state.email_body = ""
 
-        if submit_button:
+def main_app_logic(llm, clean_text):
+
+    st.title("📧 Cold Mail Generator")    # Logout button
+
+    if st.session_state.get('limited_mode', False):
+        st.warning("You're using the app with limited features. Email sending is disabled.")
+    
+    if st.button("Logout"):
+        # Clear session state
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        
+        # Revoke token if it exists
+        if 'credentials' in st.session_state and st.session_state.credentials:
+            try:
+                requests.post('https://oauth2.googleapis.com/revoke',
+                    params={'token': st.session_state.credentials.token},
+                    headers={'content-type': 'application/x-www-form-urlencoded'})
+            except Exception as e:
+                st.error(f"Error revoking token: {str(e)}")
+        
+        # Show bye message
+        st.success("You have been logged out. Thank you for using Cold Mail Generator!")
+        
+        # Redirect to the main page after a short delay
+        time.sleep(2)
+        st.rerun()
+
+    url_input = st.text_input("Enter a URL:", value="")
+    recipient_email = st.text_input("Enter recipient's Email:", type="default")
+    resume_file = st.file_uploader("Upload your Resume:", type=["pdf"])
+    
+    word_limit = st.slider("Select the number of words for the email response:", min_value=50, max_value=200, value=100, step=50)
+
+    submit_button = st.button("Generate Email")
+
+    if 'temp_resume_path' not in st.session_state:
+        st.session_state.temp_resume_path = ""
+    if 'original_resume_name' not in st.session_state:
+        st.session_state.original_resume_name = ""
+    if 'subject' not in st.session_state:
+        st.session_state.subject = ""
+    if 'email_body' not in st.session_state:
+        st.session_state.email_body = ""
+
+    if submit_button:
+        current_time = time.time()
+        time_since_last_generation = current_time - st.session_state.last_email_generation
+        
+        if time_since_last_generation < EMAIL_GENERATION_COOLDOWN:
+            remaining_time = int(EMAIL_GENERATION_COOLDOWN - time_since_last_generation)
+            st.warning(f"Please wait {remaining_time} seconds before generating another email.")
+        elif st.session_state.email_generation_count >= MAX_GENERATIONS_PER_DAY:
+            st.warning(f"You've reached the maximum number of email generations ({MAX_GENERATIONS_PER_DAY}) for today.")
+        else:
             try:
                 loader = WebBaseLoader([url_input])
                 page_content = loader.load().pop().page_content
@@ -110,22 +191,23 @@ def create_streamlit_app(llm, clean_text):
                     st.session_state.subject = ""
                     st.session_state.email_body = ""
 
-                    unique_jobs = set()  # Use a set to track unique jobs
+                    unique_jobs = set()
 
                     for job in jobs:
-                        job_key = (job['company_name'], job['role'], job['description'])  # Define a unique key for each job
+                        job_key = (job['company_name'], job['role'], job['description'])
                         if job_key not in unique_jobs:
                             unique_jobs.add(job_key)
                             resume_data = resume.split_resume_sections(resume.data)
-                            email_body = llm.write_mail(job, resume_data, word_limit)  # Pass the word limit to the write_mail method
-                            # Debug statement
+                            email_body = llm.write_mail(job, resume_data, word_limit)
                             st.session_state.email_body = email_body
 
                             subject = generate_subject(job)
                             st.session_state.subject = subject
 
                     if st.session_state.subject and st.session_state.email_body:
-                        st.success("Email generated successfully!")
+                        st.session_state.last_email_generation = current_time
+                        st.session_state.email_generation_count += 1
+                        st.success(f"Email generated successfully! ({st.session_state.email_generation_count}/{MAX_GENERATIONS_PER_DAY} generations today)")
                     else:
                         st.warning("Email generation incomplete. Please review and edit as necessary.")
                 else:
@@ -135,12 +217,13 @@ def create_streamlit_app(llm, clean_text):
                 st.error(f"An error occurred: {e}")
                 st.info("If the error persists, please try again later or consider writing the email manually.")
 
-        if st.session_state.email_body and st.session_state.subject:
-            st.session_state.subject = st.text_input("Edit Subject:", value=st.session_state.subject)
-            st.session_state.email_body = st.text_area("Edit Email Body:", value=st.session_state.email_body, height=300)
+    if st.session_state.email_body and st.session_state.subject:
+        st.session_state.subject = st.text_input("Edit Subject:", value=st.session_state.subject)
+        st.session_state.email_body = st.text_area("Edit Email Body:", value=st.session_state.email_body, height=300)
 
-        send_email_button = st.button("Send Email")
-        if send_email_button:
+    send_email_button = st.button("Send Email", disabled=not st.session_state.get('can_send_email', False))
+    if send_email_button:
+        if st.session_state.get('can_send_email', False):
             if recipient_email and st.session_state.email_body and st.session_state.subject:
                 if "@" not in recipient_email or "." not in recipient_email:
                     st.error("Invalid recipient email address format.")
@@ -148,32 +231,40 @@ def create_streamlit_app(llm, clean_text):
                     st.error("Resume file not found. Please upload your resume.")
                 else:
                     try:
-                        result = send_email(
-                            st.session_state.user_email,  # Use authenticated user's email as sender
-                            recipient_email, 
-                            st.session_state.subject, 
-                            st.session_state.email_body, 
-                            st.session_state.temp_resume_path, 
-                            st.session_state.get('original_resume_name', '')
-                        )
-                        st.success(result)
-                        st.success(f"Email sent with resume: {st.session_state.get('original_resume_name', 'resume.pdf')}")
-                        if os.path.exists(st.session_state.temp_resume_path):
-                            os.remove(st.session_state.temp_resume_path)
-                            st.session_state.temp_resume_path = ""
-                            st.session_state.original_resume_name = ""
+                        credentials = get_credentials()
+                        if credentials:
+                            result = send_email(
+                                credentials,
+                                st.session_state.user_email,
+                                recipient_email, 
+                                st.session_state.subject, 
+                                st.session_state.email_body, 
+                                st.session_state.temp_resume_path, 
+                                st.session_state.get('original_resume_name', 'resume.pdf')
+                            )
+                            st.success(result)
+                            st.success(f"Email sent with resume: {st.session_state.get('original_resume_name', 'resume.pdf')}")
+                            if os.path.exists(st.session_state.temp_resume_path):
+                                os.remove(st.session_state.temp_resume_path)
+                                st.session_state.temp_resume_path = ""
+                                st.session_state.original_resume_name = ""
+                        else:
+                            st.error("No valid credentials found. Please re-authenticate.")
                     except Exception as e:
                         st.error(f"An error occurred while sending the email: {e}")
             else:
                 st.error("Please ensure all fields are filled before sending the email.")
+        else:
+            st.error("Email sending is not available. Please upgrade permissions or copy the email content manually.")
+
+    st.info(f"Email generations remaining today: {MAX_GENERATIONS_PER_DAY - st.session_state.email_generation_count}")
+
+def logout():
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
 
 if __name__ == "__main__":
     chain = Chain()
     st.set_page_config(layout="wide", page_title="Cold Email Generator", page_icon="📧")
     create_streamlit_app(chain, clean_text)
-
-
-
-
-
-

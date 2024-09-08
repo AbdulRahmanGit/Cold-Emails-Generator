@@ -5,7 +5,6 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.exceptions import OutputParserException
 import streamlit as st
-from resume import Resume
 from utils import print_wrapped  # Import the new print_wrapped function
 
 # Set USER_AGENT
@@ -52,7 +51,7 @@ class Chain:
         You are a job seeker looking to apply for the job mentioned above. 
         Write a professional cold email to the hiring manager that includes the following:
         1. A brief introduction of yourself.
-        2. A summary of your relevant skills and experiences that match the job description.
+        2. A summary of your relevant skills and experiences from resume that match the job description.
         3. Specific projects or achievements from your resume that demonstrate your qualifications.
         4. A closing statement expressing your enthusiasm for the role and your availability for an interview and attachment of resume for reference.
         5. A kind and polite way of informing the hiring manager that you will follow up if you do not hear back within a certain timeframe.
