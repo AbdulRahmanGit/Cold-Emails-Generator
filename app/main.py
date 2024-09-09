@@ -114,9 +114,9 @@ def display_auth_link():
 
 
 def main_app_logic(llm, clean_text):
+    st.title("📧 Cold Mail Generator")
 
-    st.title("📧 Cold Mail Generator")    # Logout button
-
+    # Logout button
     if st.session_state.get('limited_mode', False):
         st.warning("You're using the app with limited features. Email sending is disabled.")
     
@@ -149,10 +149,6 @@ def main_app_logic(llm, clean_text):
 
     submit_button = st.button("Generate Email")
 
-    if 'temp_resume_path' not in st.session_state:
-        st.session_state.temp_resume_path = ""
-    if 'original_resume_name' not in st.session_state:
-        st.session_state.original_resume_name = ""
     if 'subject' not in st.session_state:
         st.session_state.subject = ""
     if 'email_body' not in st.session_state:
@@ -174,42 +170,33 @@ def main_app_logic(llm, clean_text):
                 data = clean_text(str(page_content))
 
                 if resume_file:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                        tmp_file.write(resume_file.getvalue())
-                        st.session_state.temp_resume_path = tmp_file.name
-                        st.session_state.original_resume_name = resume_file.name
-                    st.success(f"Resume uploaded successfully: {st.session_state.original_resume_name}")
+                    resume = Resume()
+                    resume_data = resume.load_resume(resume_file)
+                    if resume_data:
+                        jobs = llm.extract_jobs(data)
+                        if not isinstance(jobs, list):
+                            jobs = [jobs]
 
-                if st.session_state.temp_resume_path:
-                    resume = Resume(file_path=st.session_state.temp_resume_path)
-                    resume.load_Resume()
+                        st.session_state.subject = ""
+                        st.session_state.email_body = ""
 
-                    jobs = llm.extract_jobs(data)
-                    if not isinstance(jobs, list):
-                        jobs = [jobs]
-
-                    st.session_state.subject = ""
-                    st.session_state.email_body = ""
-
-                    unique_jobs = set()
-
-                    for job in jobs:
-                        job_key = (job['company_name'], job['role'], job['description'])
-                        if job_key not in unique_jobs:
-                            unique_jobs.add(job_key)
-                            resume_data = resume.split_resume_sections(resume.data)
+                        for job in jobs:
                             email_body = llm.write_mail(job, resume_data, word_limit)
                             st.session_state.email_body = email_body
 
                             subject = generate_subject(job)
                             st.session_state.subject = subject
 
-                    if st.session_state.subject and st.session_state.email_body:
-                        st.session_state.last_email_generation = current_time
-                        st.session_state.email_generation_count += 1
-                        st.success(f"Email generated successfully! ({st.session_state.email_generation_count}/{MAX_GENERATIONS_PER_DAY} generations today)")
+                            break  # Generate email for the first job only
+
+                        if st.session_state.subject and st.session_state.email_body:
+                            st.session_state.last_email_generation = current_time
+                            st.session_state.email_generation_count += 1
+                            st.success(f"Email generated successfully! ({st.session_state.email_generation_count}/{MAX_GENERATIONS_PER_DAY} generations today)")
+                        else:
+                            st.warning("Email generation incomplete. Please review and edit as necessary.")
                     else:
-                        st.warning("Email generation incomplete. Please review and edit as necessary.")
+                        st.error("Failed to load resume data.")
                 else:
                     st.error("Please upload a resume before generating the email.")
 
@@ -227,27 +214,29 @@ def main_app_logic(llm, clean_text):
             if recipient_email and st.session_state.email_body and st.session_state.subject:
                 if "@" not in recipient_email or "." not in recipient_email:
                     st.error("Invalid recipient email address format.")
-                elif not st.session_state.temp_resume_path or not os.path.exists(st.session_state.temp_resume_path):
+                elif not resume_file:
                     st.error("Resume file not found. Please upload your resume.")
                 else:
                     try:
                         credentials = get_credentials()
                         if credentials:
+                            # Save the uploaded resume to a temporary file
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+                                temp_file.write(resume_file.getvalue())
+                                temp_resume_path = temp_file.name
+
                             result = send_email(
                                 credentials,
                                 st.session_state.user_email,
                                 recipient_email, 
                                 st.session_state.subject, 
                                 st.session_state.email_body, 
-                                st.session_state.temp_resume_path, 
-                                st.session_state.get('original_resume_name', 'resume.pdf')
+                                temp_resume_path, 
+                                resume_file.name
                             )
                             st.success(result)
-                            st.success(f"Email sent with resume: {st.session_state.get('original_resume_name', 'resume.pdf')}")
-                            if os.path.exists(st.session_state.temp_resume_path):
-                                os.remove(st.session_state.temp_resume_path)
-                                st.session_state.temp_resume_path = ""
-                                st.session_state.original_resume_name = ""
+                            st.success(f"Email sent with resume: {resume_file.name}")
+                            os.remove(temp_resume_path)
                         else:
                             st.error("No valid credentials found. Please re-authenticate.")
                     except Exception as e:
@@ -255,7 +244,7 @@ def main_app_logic(llm, clean_text):
             else:
                 st.error("Please ensure all fields are filled before sending the email.")
         else:
-            st.error("Email sending is not available. Please upgrade permissions or copy the email content manually.")
+            st.error("Email sending is not available. Please grant the necessary permissions or copy the email content manually.")
 
     st.info(f"Email generations remaining today: {MAX_GENERATIONS_PER_DAY - st.session_state.email_generation_count}")
 
