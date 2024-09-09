@@ -16,19 +16,35 @@ from google.auth.transport.requests import Request
 import pickle
 from oauth import Flow, SCOPES
 
-# Load environment variables from .env file
-load_dotenv()
+# Try to load .env file for local development
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # Running on Streamlit Cloud, .env file not needed
 
-# Load OAuth credentials from environment variables
+# Now load your environment variables
+GOOGLE_CLIENT_ID = st.secrets.get("GOOGLE_CLIENT_ID") or os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = st.secrets.get("GOOGLE_CLIENT_SECRET") or os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_PROJECT_ID = st.secrets.get("GOOGLE_PROJECT_ID") or os.getenv("GOOGLE_PROJECT_ID")
+GOOGLE_REDIRECT_URI = st.secrets.get("GOOGLE_REDIRECT_URI") or os.getenv("GOOGLE_REDIRECT_URI")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+# Validate that we have our environment variables
+if not all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_PROJECT_ID, GOOGLE_REDIRECT_URI, GEMINI_API_KEY]):
+    st.error("Missing required environment variables. Please check your .env file or Streamlit Cloud secrets.")
+    st.stop()
+
+# Update client_secrets dictionary
 client_secrets = {
     "web": {
-        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-        "project_id": os.getenv("GOOGLE_PROJECT_ID"),
+        "client_id": GOOGLE_CLIENT_ID,
+        "project_id": GOOGLE_PROJECT_ID,
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-        "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
-        "redirect_uris": [os.getenv("GOOGLE_REDIRECT_URI")]
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uris": [GOOGLE_REDIRECT_URI]
     }
 }
 
@@ -244,7 +260,7 @@ def main_app_logic(llm, clean_text):
             else:
                 st.error("Please ensure all fields are filled before sending the email.")
         else:
-            st.error("Email sending is not available. Please grant the necessary permissions or copy the email content manually.")
+            st.error("Email sending is not available. Please upgrade permissions or copy the email content manually.")
 
     st.info(f"Email generations remaining today: {MAX_GENERATIONS_PER_DAY - st.session_state.email_generation_count}")
 

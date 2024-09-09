@@ -3,12 +3,7 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 import streamlit as st
-import os
-from dotenv import load_dotenv
 import requests
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Define the scopes
 SCOPES = [
@@ -16,10 +11,6 @@ SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'openid'
 ]
-
-def load_client_secrets(file_path='app/resource/client_secret.json'):
-    with open(file_path) as f:
-        return json.load(f)
 
 def get_flow(client_secrets, redirect_uri):
     return Flow.from_client_config(
@@ -39,7 +30,6 @@ def get_credentials():
         elif isinstance(st.session_state.credentials, Credentials):
             return st.session_state.credentials
     return None
-
 
 def get_user_info(access_token):
     userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"

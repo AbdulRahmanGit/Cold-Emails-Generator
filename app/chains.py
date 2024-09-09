@@ -13,7 +13,7 @@ os.environ['USER_AGENT'] = os.getenv('USER_AGENT', 'ColdEmailGenerator/1.0')
 
 class Chain:
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3, api_key=os.getenv("GEMINI_API_KEY"), max_output_tokens=2000)
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3, api_key=os.getenv("GEMINI_API_KEY"),max_output_tokens=3000)
 
     def extract_jobs(self, cleaned_text):
         prompt_extract = PromptTemplate.from_template(
@@ -68,12 +68,12 @@ class Chain:
         5. Sign-off: Use a professional closing and your full name.
 
         Guidelines:
-        - Keep the email concise and impactful, limited to upto {word_limit} words.
+        - Keep the email concise and impactful, limited to up to {word_limit} words.
         - Use a confident yet respectful tone throughout.
         - Avoid clichés and generic statements; be specific to the job and company.
         - Ensure proper paragraph breaks for readability.
         - Do not use placeholders. Use the actual information from the resume parts and job description.
-
+        - If specific information (like where the job was posted) is not available, omit it rather than using a placeholder.
         ### EMAIL (NO PREAMBLE OR SUBJECT LINE):
         """
         )
@@ -92,11 +92,27 @@ class Chain:
 
     def format_email(self, email_content):
         # Split the email into paragraphs
-        paragraphs = email_content.split('\n\n')
+        paragraphs = [p.strip() for p in email_content.split('\n\n') if p.strip()]
+        
+        # Remove any remaining line breaks within paragraphs
+        paragraphs = [' '.join(p.split()) for p in paragraphs]
+        
+        # Combine shorter paragraphs
+        combined_paragraphs = []
+        current_paragraph = ""
+        for p in paragraphs:
+            if len(current_paragraph) + len(p) < 150:  # Adjust this threshold as needed
+                current_paragraph += " " + p if current_paragraph else p
+            else:
+                if current_paragraph:
+                    combined_paragraphs.append(current_paragraph)
+                current_paragraph = p
+        if current_paragraph:
+            combined_paragraphs.append(current_paragraph)
         
         # Ensure each paragraph starts with a capital letter and ends with a period
         formatted_paragraphs = []
-        for para in paragraphs:
+        for para in combined_paragraphs:
             para = para.strip()
             if para:
                 if not para[0].isupper():
