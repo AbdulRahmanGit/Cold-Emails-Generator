@@ -114,5 +114,5 @@ class Resume:
         
         return "\n\n".join(formatted_results)
 
-# Remove the Streamlit app part from this file
+
 
