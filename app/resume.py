@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 @st.cache_resource
 def load_sentence_transformer_model():
-    model = SentenceTransformer('paraphrase-MiniLM-L3-v2')
+    model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     model = model.to('cpu')
     return model
 
@@ -28,7 +28,7 @@ class Resume:
             "Certifications": [],
             "Links": []
         }
-        self.create_embeddings = self._create_embeddings
+        self.embeddings = None
 
     @st.cache_data
     def _create_embeddings(_self, text):
@@ -47,7 +47,7 @@ class Resume:
             try:
                 self.data = self.extract_text_from_pdf(uploaded_file)
                 self.split_resume_sections(self.data)
-                self.embeddings = self.create_embeddings(self.data)
+                self.embeddings = self._create_embeddings(self.data)
                 return self.sections
             except Exception as e:
                 st.error(f"Error loading resume: {str(e)}")
@@ -91,27 +91,62 @@ class Resume:
         # Clean up empty sections
         self.sections = {k: v for k, v in self.sections.items() if v}
 
+    def get_all_sections_text(self):
+        """Return all resume sections as formatted text for analysis (e.g. analyze_fit)."""
+        sections_text = []
+        for section, content in self.sections.items():
+            if content:
+                if isinstance(content, list):
+                    sections_text.append(f"## {section}:\n" + "\n- ".join(content))
+                else:
+                    sections_text.append(f"## {section}:\n{content}")
+        return "\n\n".join(sections_text)
+
     def query_resume(self, query, n_results=3):
         with torch.no_grad():
             query_embedding = self.model.encode([query], show_progress_bar=False)[0]
-        
+
         results = []
         for section, content in self.sections.items():
             if isinstance(content, list):
-                similarities = torch.cosine_similarity(torch.tensor(query_embedding).unsqueeze(0), 
-                                                       torch.tensor(self.embeddings[section]), dim=1)
+                with torch.no_grad():
+                    similarities = torch.cosine_similarity(
+                        torch.tensor(query_embedding).unsqueeze(0),
+                        torch.tensor(self.embeddings[section]),
+                        dim=1
+                    )
                 for item, similarity in zip(content, similarities):
-                    results.append({"section": section, "content": item, "similarity": similarity.item()})
+                    results.append({
+                        "section": section,
+                        "content": item,
+                        "similarity": similarity.item()
+                    })
             else:
-                similarity = torch.cosine_similarity(torch.tensor(query_embedding), 
-                                                     torch.tensor(self.embeddings[section]), dim=0).item()
-                results.append({"section": section, "content": content, "similarity": similarity})
+                if isinstance(self.embeddings[section], torch.Tensor):
+                    similarity = torch.cosine_similarity(
+                        torch.tensor(query_embedding).unsqueeze(0),
+                        torch.tensor(self.embeddings[section]).unsqueeze(0),
+                        dim=1
+                    ).item()
+                else:
+                    with torch.no_grad():
+                        similarity = torch.cosine_similarity(
+                            torch.tensor(query_embedding).unsqueeze(0),
+                            torch.tensor(self.embeddings[section]).unsqueeze(0),
+                            dim=1
+                        ).item()
+                results.append({
+                    "section": section,
+                    "content": content,
+                    "similarity": similarity
+                })
 
         results.sort(key=lambda x: x["similarity"], reverse=True)
+
         formatted_results = []
         for result in results[:n_results]:
-            formatted_results.append(f"{result['section']}:\n{result['content']}")
-        
+            formatted_results.append(f"**{result['section']}:**\n{result['content']}")
+
         return "\n\n".join(formatted_results)
 
 

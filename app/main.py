@@ -3,13 +3,13 @@ from langchain_community.document_loaders import WebBaseLoader
 from chains import Chain
 from resume import Resume
 from utils import clean_text
-from email_services import generate_subject, send_email
+from sidebar import *
+from email_services import send_email
 import tempfile
 import os
 import time
 from authlib.integrations.requests_client import OAuth2Session
 import requests
-import json
 from oauth import get_flow, authenticate_user, get_credentials, SCOPES, get_user_info
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
@@ -34,6 +34,9 @@ GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 if not all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_PROJECT_ID, GOOGLE_REDIRECT_URI, GEMINI_API_KEY]):
     st.error("Missing required environment variables. Please check your .env file or Streamlit Cloud secrets.")
     st.stop()
+
+# Chain() and langchain read GEMINI_API_KEY from os.environ; Streamlit secrets are not injected there by default.
+os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 
 # Update client_secrets dictionary
 client_secrets = {
@@ -67,6 +70,7 @@ def get_flow(client_secrets, redirect_uri, include_optional=True):
     return Flow.from_client_config(client_secrets, scopes=scopes, redirect_uri=redirect_uri)
 
 def create_streamlit_app(llm, clean_text):
+    add_sidebar()
     # Initialize session state variables
     if 'is_authenticated' not in st.session_state:
         st.session_state.is_authenticated = False
@@ -126,7 +130,11 @@ def display_auth_link():
     st.title("📧 Cold Mail Generator")
     flow = get_flow(client_secrets, redirect_uri)
     auth_url, _ = flow.authorization_url(prompt='consent')
-    st.write(f"[Authenticate with Google]({auth_url})")
+
+        #st.page_link(auth_url)
+        #st.markdown(f"[Click here to log in with Google]({auth_url})", unsafe_allow_html=True)
+    st.write(f"[Click here to Login...]({auth_url})")
+        
 
 
 def main_app_logic(llm, clean_text):
@@ -169,6 +177,8 @@ def main_app_logic(llm, clean_text):
         st.session_state.subject = ""
     if 'email_body' not in st.session_state:
         st.session_state.email_body = ""
+    if 'analysis' not in st.session_state:
+        st.session_state.analysis = None
 
     if submit_button:
         current_time = time.time()
@@ -181,34 +191,44 @@ def main_app_logic(llm, clean_text):
             st.warning(f"You've reached the maximum number of email generations ({MAX_GENERATIONS_PER_DAY}) for today.")
         else:
             try:
-                loader = WebBaseLoader([url_input])
-                page_content = loader.load().pop().page_content
-                data = clean_text(str(page_content))
-
                 if resume_file:
                     resume = Resume()
-                    resume_data = resume.load_resume(resume_file)
-                    if resume_data:
-                        jobs = llm.extract_jobs(data)
-                        if not isinstance(jobs, list):
-                            jobs = [jobs]
+                    loaded = resume.load_resume(resume_file)
+                    if loaded is not None:
+                        with st.spinner("Analyzing job posting and resume..."):
+                            loader = WebBaseLoader([url_input])
+                            page_content = loader.load().pop().page_content
+                            data = clean_text(str(page_content))
 
-                        st.session_state.subject = ""
-                        st.session_state.email_body = ""
+                            jobs = llm.extract_jobs(data)
+                            if not isinstance(jobs, list):
+                                jobs = [jobs]
 
-                        for job in jobs:
-                            email_body = llm.write_mail(job, resume_data, word_limit)
-                            st.session_state.email_body = email_body
+                            st.session_state.subject = ""
+                            st.session_state.email_body = ""
+                            st.session_state.analysis = None
 
-                            subject = generate_subject(job)
-                            st.session_state.subject = subject
+                            for job in jobs:
+                                resume_sections = resume.get_all_sections_text()
+                                analysis = llm.analyze_fit(job, resume_sections)
+                                st.session_state.analysis = analysis
 
-                            break  # Generate email for the first job only
+                                subject = llm.generate_subject_line(analysis, job)
+                                st.session_state.subject = subject
+
+                                email_body = llm.write_mail(job, resume, word_limit, analysis)
+                                st.session_state.email_body = email_body
+
+                                break  # Generate email for the first job only
 
                         if st.session_state.subject and st.session_state.email_body:
                             st.session_state.last_email_generation = current_time
                             st.session_state.email_generation_count += 1
                             st.success(f"Email generated successfully! ({st.session_state.email_generation_count}/{MAX_GENERATIONS_PER_DAY} generations today)")
+                            if st.session_state.analysis:
+                                with st.expander("📊 Generation Analysis"):
+                                    st.write(f"**Strongest Overlap:** {st.session_state.analysis.get('strongest_overlap', 'N/A')}")
+                                    st.write(f"**Company Insight:** {st.session_state.analysis.get('company_insight', 'N/A')}")
                         else:
                             st.warning("Email generation incomplete. Please review and edit as necessary.")
                     else:
@@ -221,6 +241,7 @@ def main_app_logic(llm, clean_text):
                 st.info("If the error persists, please try again later or consider writing the email manually.")
 
     if st.session_state.email_body and st.session_state.subject:
+        st.subheader("Review & Edit")
         st.session_state.subject = st.text_input("Edit Subject:", value=st.session_state.subject)
         st.session_state.email_body = st.text_area("Edit Email Body:", value=st.session_state.email_body, height=300)
 

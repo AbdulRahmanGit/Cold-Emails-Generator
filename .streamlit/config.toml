@@ -1,0 +1,6 @@
+# Streamlit's default file watcher introspects all loaded packages. PyTorch's
+# `torch.classes` submodule does not expose `__path__._path` like a normal
+# namespace package; accessing `_path` triggers torch._classes and raises
+# RuntimeError. Disabling the watcher avoids that (reload the app manually after edits).
+[server]
+fileWatcherType = "none"
