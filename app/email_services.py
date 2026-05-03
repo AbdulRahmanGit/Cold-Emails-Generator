@@ -20,13 +20,14 @@ def send_email(credentials, sender_email, to, subject, body, attachment_path, at
         if not service:
             raise ValueError("Failed to authenticate with Gmail API.")
 
+        # Create a multipart email
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = to
         msg['Subject'] = subject
 
-        # Attach the email body
-        msg.attach(MIMEText(body, 'plain'))
+        # Attach the plain text version of the email
+        msg.attach(MIMEText(body, 'plain'))  # Plain text version
 
         # Attach the resume file
         if attachment_path and os.path.exists(attachment_path):
